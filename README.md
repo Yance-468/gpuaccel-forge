@@ -42,7 +42,7 @@ GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声）�
     $env:JAVA_HOME = "C:\path\to\jdk-17"
     .\gradlew.bat build
 
-产物：build/libs/gpuaccel-1.0.0-all.jar（自带 lwjgl-opencl 绑定与三平台 LWJGL 原生库），直接丢进服务器的 mods 目录即可。
+产物：build/libs/gpuaccel-1.0.1.jar（lwjgl-opencl 绑定已直接合并进 jar，另带三平台 LWJGL 原生库），直接丢进服务器的 mods 目录即可。
 
 ## 命令
 
