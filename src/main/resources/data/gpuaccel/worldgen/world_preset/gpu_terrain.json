@@ -1,0 +1,18 @@
+{
+  "dimensions": {
+    "minecraft:overworld": {
+      "type": "minecraft:overworld",
+      "generator": {
+        "type": "gpuaccel:gpu_terrain",
+        "biome_source": {
+          "type": "minecraft:fixed",
+          "biome": "minecraft:plains"
+        },
+        "scale": 0.02,
+        "base_height": 60.0,
+        "amplitude": 40.0,
+        "seed": 12345
+      }
+    }
+  }
+}

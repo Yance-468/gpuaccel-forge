@@ -36,10 +36,11 @@ float fbm(float x, float y, uint seed) {
 }
 
 __kernel void heightmap(__global float* out, int width, int height,
-                        float scale, float baseHeight, float amplitude, uint seed) {
+                        float scale, float baseHeight, float amplitude, uint seed,
+                        int offsetX, int offsetZ) {
     int gx = get_global_id(0);
     int gy = get_global_id(1);
     if (gx >= width || gy >= height) return;
-    float h = fbm((float)gx * scale, (float)gy * scale, seed);
+    float h = fbm((float)(offsetX + gx) * scale, (float)(offsetZ + gy) * scale, seed);
     out[gy * width + gx] = baseHeight + h * amplitude;
 }

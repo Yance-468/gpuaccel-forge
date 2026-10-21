@@ -52,6 +52,14 @@ GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声）�
 | /gpuaccel benchmark [size] | 生成 size×size 高度图，对比 GPU 与 CPU 耗时（默认 1024，范围 256–2048） |
 | /gpuaccel heightmap 宽 高 [种子] | 在 GPU 上生成高度图并输出统计信息 |
 
+## 自定义世界类型（v1.0.1，接入原版世界生成）
+
+本模组新增了一个 **GPU Terrain** 世界预设：创建新世界时在「世界类型」里选 **GPU Terrain**，或在服务器的 server.properties 里设置：
+
+    level-type=gpuaccel:gpu_terrain
+
+它使用 GpuChunkGenerator：地形表面高度由 GPU 按区域（256×256 列）并行生成并缓存，每个 (x,z) 列独立计算——正是世界生成中最适合 GPU 的一类工作；没有 GPU 时自动回退到 CPU（结果一致）。
+
 ## 代码结构
 
     src/main/java/dev/gpuaccel/

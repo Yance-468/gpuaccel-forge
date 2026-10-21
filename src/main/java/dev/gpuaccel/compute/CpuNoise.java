@@ -9,15 +9,19 @@ package dev.gpuaccel.compute;
 public final class CpuNoise {
     private CpuNoise() {}
 
-    public static float[] heightmap(int w, int h, float scale, float base, float amp, int seed) {
+    public static float[] heightmap(int w, int h, float scale, float base, float amp, int seed, int offsetX, int offsetZ) {
         float[] out = new float[w * h];
         for (int y = 0; y < h; y++) {
             int row = y * w;
             for (int x = 0; x < w; x++) {
-                out[row + x] = base + amp * fbm(x * scale, y * scale, seed);
+                out[row + x] = base + amp * fbm((offsetX + x) * scale, (offsetZ + y) * scale, seed);
             }
         }
         return out;
+    }
+
+    public static float[] heightmap(int w, int h, float scale, float base, float amp, int seed) {
+        return heightmap(w, h, scale, base, amp, seed, 0, 0);
     }
 
     public static float fbm(float x, float y, int seed) {

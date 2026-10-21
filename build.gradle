@@ -81,10 +81,10 @@ dependencies {
 // Copy the LWJGL core native libraries into the jar resources so they can be extracted at runtime.
 def extractLwjglNatives = tasks.register('extractLwjglNatives', Copy) {
     from(configurations.lwjglNatives.collect { zipTree(it) })
-    into(layout.buildDirectory.dir('natives'))
+    into(layout.buildDirectory.dir('generated/natives'))
     include '**/*.dll', '**/*.so', '**/*.dylib'
 }
-sourceSets.main.resources.srcDir(layout.buildDirectory.dir('natives'))
+sourceSets.main.resources.srcDir(layout.buildDirectory.dir('generated/natives'))
 tasks.named('processResources').configure { dependsOn extractLwjglNatives }
 
 tasks.named('processResources', ProcessResources).configure {

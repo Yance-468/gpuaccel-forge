@@ -63,7 +63,7 @@ public final class GpuComputeEngine implements AutoCloseable {
             openClReady = true;
             lastError = null;
         } catch (Throwable t) {
-            lastError = t.toString();
+            lastError = t.toString() + (t.getCause() != null ? " (cause: " + t.getCause() + ")" : "");
             throw new IllegalStateException("OpenCL init failed", t);
         }
     }
@@ -146,8 +146,8 @@ public final class GpuComputeEngine implements AutoCloseable {
         }
     }
 
-    /** Generates a heightmap entirely on the GPU. */
-    public float[] heightmap(int w, int h, float scale, float base, float amp, int seed) {
+    /** Generates a heightmap entirely on the GPU, at the given world-coordinate offset. */
+    public synchronized float[] heightmap(int w, int h, float scale, float base, float amp, int seed, int offsetX, int offsetZ) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer err = stack.mallocInt(1);
             FloatBuffer out = MemoryUtil.memAllocFloat(w * h);
@@ -161,6 +161,8 @@ public final class GpuComputeEngine implements AutoCloseable {
                 check(clSetKernelArg1f(heightmapKernel, 4, base));
                 check(clSetKernelArg1f(heightmapKernel, 5, amp));
                 check(clSetKernelArg1i(heightmapKernel, 6, seed));
+                check(clSetKernelArg1i(heightmapKernel, 7, offsetX));
+                check(clSetKernelArg1i(heightmapKernel, 8, offsetZ));
                 PointerBuffer gws = stack.mallocPointer(2).put(w).put(h).flip();
                 check(clEnqueueNDRangeKernel(queue, heightmapKernel, 2, null, gws, null, null, null));
                 check(clFinish(queue));
@@ -173,6 +175,11 @@ public final class GpuComputeEngine implements AutoCloseable {
                 MemoryUtil.memFree(out);
             }
         }
+    }
+
+    /** Convenience overload with zero offset (used by /gpuaccel benchmark and heightmap). */
+    public float[] heightmap(int w, int h, float scale, float base, float amp, int seed) {
+        return heightmap(w, h, scale, base, amp, seed, 0, 0);
     }
 
     @Override

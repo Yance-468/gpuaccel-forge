@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
 /**
@@ -25,13 +26,22 @@ public final class LwjglNatives {
         String resource = nativeResource();
         if (resource == null) return;
         try {
-            Path dir = Files.createTempDirectory("gpuaccel-natives");
+            Path dir;
+            try {
+                dir = Files.createTempDirectory("gpuaccel-natives");
+            } catch (IOException e) {
+                // Temp dir may be locked down (e.g. sandboxed servers); fall back to the working directory.
+                dir = Paths.get("gpuaccel-natives").toAbsolutePath();
+                Files.createDirectories(dir);
+            }
             Path file = dir.resolve(nativeFileName());
             try (InputStream in = LwjglNatives.class.getResourceAsStream(resource)) {
                 if (in == null) return;
                 Files.copy(in, file, StandardCopyOption.REPLACE_EXISTING);
             }
-            Configuration.LIBRARY_PATH.set(dir.toAbsolutePath().toString());
+            String abs = dir.toAbsolutePath().toString();
+            Configuration.LIBRARY_PATH.set(abs);
+            System.setProperty("org.lwjgl.librarypath", abs);
         } catch (IOException ignored) {
             // Extraction failed; rely on the host's own LWJGL native setup instead.
         }

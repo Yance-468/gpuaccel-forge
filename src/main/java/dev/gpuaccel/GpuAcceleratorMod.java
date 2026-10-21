@@ -2,9 +2,11 @@ package dev.gpuaccel;
 
 import dev.gpuaccel.command.GpuCommand;
 import dev.gpuaccel.gpu.GpuComputeEngine;
+import dev.gpuaccel.worldgen.GpuWorldTypes;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.apache.logging.log4j.LogManager;
@@ -32,6 +34,7 @@ public class GpuAcceleratorMod {
 
     public GpuAcceleratorMod() {
         MinecraftForge.EVENT_BUS.register(this);
+        GpuWorldTypes.register(FMLJavaModLoadingContext.get().getModEventBus());
     }
 
     public static GpuComputeEngine engine() {
