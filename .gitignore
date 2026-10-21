@@ -27,3 +27,7 @@ forge*changelog.txt
 build-full.log
 build.bat
 mcmodsrepo
+# local run scratch
+run-server.bat
+run-server.log
+*.log
