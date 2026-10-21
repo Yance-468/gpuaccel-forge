@@ -44,13 +44,12 @@ GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声）�
 
 产物：build/libs/gpuaccel-1.0.1.jar（lwjgl-opencl 绑定已直接合并进 jar，另带三平台 LWJGL 原生库），直接丢进服务器的 mods 目录即可。
 
-## 命令
+## 自动启动
 
-| 命令 | 说明 |
-|------|------|
-| /gpuaccel status | 列出检测到的 OpenCL 设备 |
-| /gpuaccel benchmark [size] | 生成 size×size 高度图，对比 GPU 与 CPU 耗时（默认 1024，范围 256–2048） |
-| /gpuaccel heightmap 宽 高 [种子] | 在 GPU 上生成高度图并输出统计信息 |
+服务器启动时，模组会自动初始化 GPU 引擎（检测 OpenCL 设备并编译内核），结果写入日志：
+
+- `GPU compute engine ready: ...` —— GPU 可用
+- `GPU compute engine unavailable: ...` —— 没有可用 GPU，世界生成自动回退到 CPU（结果一致）
 
 ## 自定义世界类型（v1.0.1，接入原版世界生成）
 

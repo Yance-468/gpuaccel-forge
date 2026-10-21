@@ -1,10 +1,9 @@
 package dev.gpuaccel;
 
-import dev.gpuaccel.command.GpuCommand;
 import dev.gpuaccel.gpu.GpuComputeEngine;
 import dev.gpuaccel.worldgen.GpuWorldTypes;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -17,13 +16,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * GPU Accelerator: offloads suitable server-side computations (terrain heightmap generation
- * and benchmarks) to the GPU via OpenCL (LWJGL). Commands:
- * <ul>
- *     <li>/gpuaccel status - list detected OpenCL devices</li>
- *     <li>/gpuaccel benchmark [size] - CPU vs GPU heightmap timing</li>
- *     <li>/gpuaccel heightmap &lt;w&gt; &lt;h&gt; [seed] - generate a heightmap on the GPU</li>
- * </ul>
+ * GPU Accelerator: offloads suitable server-side computations (world-generation heightmaps)
+ * to the GPU via OpenCL (LWJGL). The GPU engine is initialized automatically when the
+ * dedicated server starts.
  */
 @Mod("gpuaccel")
 public class GpuAcceleratorMod {
@@ -41,7 +36,7 @@ public class GpuAcceleratorMod {
         return engine;
     }
 
-    /** Lazily creates the GPU engine (called from commands, on the server thread). */
+    /** Creates the GPU engine and compiles the heightmap kernel. */
     public static synchronized GpuComputeEngine ensureEngine() {
         if (engine == null) {
             String source = loadKernel();
@@ -70,8 +65,8 @@ public class GpuAcceleratorMod {
     }
 
     @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event) {
-        GpuCommand.register(event.getDispatcher());
+    public void onServerStarting(ServerStartingEvent event) {
+        ensureEngine();
     }
 
     @SubscribeEvent
