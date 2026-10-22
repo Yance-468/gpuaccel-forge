@@ -51,6 +51,8 @@ public final class GpuChunkGenerator extends ChunkGenerator {
     private static final int WORLD_HEIGHT = 384;
     private static final int REGION_SIZE = 256;
     private static final int SURFACE_DEPTH = 3;
+    /** Upper bound on cached 256x256 regions (~256 KB each) to keep memory bounded during large pre-generation (e.g. Chunky). */
+    private static final int MAX_CACHED_REGIONS = 512;
 
     private final float scale;
     private final float baseHeight;
@@ -84,6 +86,10 @@ public final class GpuChunkGenerator extends ChunkGenerator {
             float[] computed = generateRegion(rx, rz);
             float[] existing = heightCache.putIfAbsent(key, computed);
             region = existing != null ? existing : computed;
+            // Keep memory bounded during large pre-generation (e.g. Chunky).
+            if (heightCache.size() > MAX_CACHED_REGIONS) {
+                heightCache.clear();
+            }
         }
         int lx = x - rx * REGION_SIZE;
         int lz = z - rz * REGION_SIZE;

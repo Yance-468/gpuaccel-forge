@@ -141,7 +141,10 @@ public final class GpuComputeEngine implements AutoCloseable {
                 return new GpuComputeEngine(context, queue, dev, program, kernel, info);
             }
         } catch (Throwable t) {
-            lastError = t.toString();
+            // ensureOpenCl() already records a detailed reason; keep it if present.
+            if (lastError == null) {
+                lastError = t.getCause() != null ? t.getCause().toString() : t.toString();
+            }
             return null;
         }
     }
