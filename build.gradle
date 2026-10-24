@@ -157,6 +157,45 @@ afterEvaluate {
     }
 }
 
+// Build a client-only variant: same as the -all.jar but WITHOUT the lwjgl core nested jar.
+// The client already ships LWJGL (core) as a JPMS module, so bundling it again causes a split
+// package. The client only needs the OpenCL binding (which Minecraft does not ship).
+tasks.register('createClientJar') {
+    dependsOn 'reobfJarJar'
+    def serverJarProvider = tasks.named('reobfJarJar').flatMap { it.input }
+    inputs.file(serverJarProvider)
+    def clientJar = layout.buildDirectory.file('libs/' + mod_id + '-' + mod_version + '-client.jar')
+    outputs.file(clientJar)
+    doLast {
+        def serverJar = serverJarProvider.get().asFile
+        def clientJarFile = clientJar.get().asFile
+        def clientMeta = '{"jars":[{"identifier":{"group":"org.lwjgl","artifact":"lwjgl-opencl"},"version":{"range":"[3.3.1,3.3.2)","artifactVersion":"3.3.1"},"path":"META-INF/jarjar/lwjgl-opencl-3.3.1.jar","isObfuscated":false}]}'
+        def zin = new java.util.zip.ZipInputStream(new FileInputStream(serverJar))
+        def zout = new java.util.zip.ZipOutputStream(new FileOutputStream(clientJarFile))
+        try {
+            def entry
+            while ((entry = zin.nextEntry) != null) {
+                if (entry.name == 'META-INF/jarjar/lwjgl-3.3.1.jar') {
+                    continue
+                }
+                if (entry.name == 'META-INF/jarjar/metadata.json') {
+                    zout.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                    zout.write(clientMeta.getBytes('UTF-8'))
+                    zout.closeEntry()
+                    continue
+                }
+                zout.putNextEntry(new java.util.zip.ZipEntry(entry))
+                zin.transferTo(zout)
+                zout.closeEntry()
+            }
+        } finally {
+            zin.close()
+            zout.close()
+        }
+    }
+}
+tasks.named('build').configure { dependsOn 'createClientJar' }
+
 def stripJarJarNested(InputStream input) {
     def out = new ByteArrayOutputStream()
     def zin = new java.util.zip.ZipInputStream(input)
