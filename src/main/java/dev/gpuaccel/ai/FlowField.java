@@ -73,6 +73,7 @@ public final class FlowField {
     public int targetX() { return targetX; }
     public int targetY() { return targetY; }
     public int targetZ() { return targetZ; }
+    public BlockPos targetPos() { return new BlockPos(targetX, targetY, targetZ); }
 
     /** Flow direction for a world position, or null if outside/unknown. */
     public Vec3 directionAt(BlockPos pos) {
