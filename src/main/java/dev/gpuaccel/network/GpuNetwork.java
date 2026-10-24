@@ -27,7 +27,11 @@ public final class GpuNetwork {
     }
 
     public static void sendStatusToClient(ServerPlayer player) {
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new S2CGpuStatus(GpuAcceleratorMod.status()));
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new S2CGpuStatus(GpuAcceleratorMod.status(player.getServer())));
+    }
+
+    public static void sendNotAuthorized(ServerPlayer player) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new S2CGpuStatus(GpuStatusSnapshot.notAuthorized()));
     }
 
     private GpuNetwork() {}

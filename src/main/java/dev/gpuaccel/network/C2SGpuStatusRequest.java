@@ -19,7 +19,11 @@ public record C2SGpuStatusRequest() {
         ctx.enqueueWork(() -> {
             ServerPlayer sender = ctx.getSender();
             if (sender != null) {
-                GpuNetwork.sendStatusToClient(sender);
+                if (sender.hasPermissions(2)) {
+                    GpuNetwork.sendStatusToClient(sender);
+                } else {
+                    GpuNetwork.sendNotAuthorized(sender);
+                }
             }
         });
         ctx.setPacketHandled(true);

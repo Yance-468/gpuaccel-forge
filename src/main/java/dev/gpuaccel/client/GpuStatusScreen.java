@@ -49,6 +49,12 @@ public class GpuStatusScreen extends Screen {
             if (s.heightmapCalls() > 0) {
                 graphics.drawString(this.font, "平均耗时 / Average: " + formatNanos(s.totalNanos() / s.heightmapCalls()), this.width / 2 - 150, y, 0xFFFFFF);
             }
+            y += 12;
+            graphics.drawString(this.font, "=== 服务器 / Server ===", this.width / 2 - 150, y, 0xFFFFFF); y += 12;
+            graphics.drawString(this.font, String.format(Locale.ROOT, "系统 CPU / System CPU: %.1f%%", s.systemCpuLoad()), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
+            graphics.drawString(this.font, String.format(Locale.ROOT, "服务器进程 CPU / Process CPU: %.1f%%", s.processCpuLoad()), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
+            graphics.drawString(this.font, "内存 / Heap: " + formatBytes(s.heapUsedBytes()) + " / " + formatBytes(s.heapMaxBytes()), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
+            graphics.drawString(this.font, "世界存储 / World: " + formatBytes(s.worldSizeBytes()), this.width / 2 - 150, y, 0xFFFFFF);
         } else {
             graphics.drawString(this.font, "GPU 不可用 / GPU unavailable", this.width / 2 - 150, y, 0xFFFFFF); y += 14;
             graphics.drawString(this.font, "原因 / Reason: " + s.deviceName(), this.width / 2 - 150, y, 0xFFFFFF);
@@ -58,8 +64,11 @@ public class GpuStatusScreen extends Screen {
     }
 
     private static String formatBytes(long bytes) {
-        if (bytes <= 0) return "未知 / unknown";
-        return String.format(Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+        if (bytes <= 0) return "0 MB";
+        if (bytes < 1024L * 1024L * 1024L) {
+            return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
+        }
+        return String.format(Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 
     private static String formatNanos(long nanos) {

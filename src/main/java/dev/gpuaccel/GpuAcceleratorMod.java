@@ -4,6 +4,8 @@ import dev.gpuaccel.gpu.GpuComputeEngine;
 import dev.gpuaccel.network.GpuNetwork;
 import dev.gpuaccel.network.GpuStatusSnapshot;
 import dev.gpuaccel.worldgen.GpuWorldTypes;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
@@ -15,7 +17,11 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.stream.Stream;
 
 /**
  * GPU Accelerator: offloads suitable server-side computations (world-generation heightmaps)
@@ -57,13 +63,41 @@ public class GpuAcceleratorMod {
         return engine;
     }
 
-    /** Snapshot of the current GPU status, sent to the client GUI. */
-    public static GpuStatusSnapshot status() {
+    /** Snapshot of the current server status (GPU + CPU + memory + world size), sent to the client GUI. */
+    public static GpuStatusSnapshot status(MinecraftServer server) {
         GpuComputeEngine e = engine;
-        if (e != null) {
-            return e.snapshot();
+        GpuStatusSnapshot gpu = (e != null) ? e.snapshot() : GpuStatusSnapshot.unavailable(GpuComputeEngine.lastError());
+
+        double systemCpu = 0.0;
+        double processCpu = 0.0;
+        try {
+            com.sun.management.OperatingSystemMXBean os =
+                    (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+            double s = os.getSystemCpuLoad();
+            double p = os.getProcessCpuLoad();
+            if (s >= 0) systemCpu = s * 100.0;
+            if (p >= 0) processCpu = p * 100.0;
+        } catch (Throwable ignored) {
         }
-        return GpuStatusSnapshot.unavailable(GpuComputeEngine.lastError());
+
+        Runtime runtime = Runtime.getRuntime();
+        long heapUsed = runtime.totalMemory() - runtime.freeMemory();
+        long heapMax = runtime.maxMemory();
+
+        long worldSize = 0;
+        if (server != null) {
+            try {
+                Path worldDir = server.getWorldPath(LevelResource.ROOT);
+                try (Stream<Path> stream = Files.walk(worldDir)) {
+                    worldSize = stream.filter(Files::isRegularFile).mapToLong(p -> {
+                        try { return Files.size(p); } catch (IOException ex) { return 0; }
+                    }).sum();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return gpu.withServerStats(systemCpu, processCpu, heapUsed, heapMax, worldSize);
     }
 
     private static String loadKernel() {

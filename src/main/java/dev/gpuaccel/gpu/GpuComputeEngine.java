@@ -70,7 +70,8 @@ public final class GpuComputeEngine implements AutoCloseable {
                 heightmapCalls,
                 totalNanos,
                 lastHeightmapNanos,
-                busyPercent()
+                busyPercent(),
+                0.0, 0.0, 0L, 0L, 0L
         );
     }
 
