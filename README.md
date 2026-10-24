@@ -1,40 +1,63 @@
-﻿# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
+# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
 
 让 **GPU 参与服务器加速运算** 的 Forge 服务端模组。它通过 OpenCL（LWJGL 绑定）把
-适合并行的计算——地形高度图生成、CPU/GPU 基准对比——卸载到显卡上执行，把服务器 CPU
-从大量重复的逐点计算中解放出来。
+两类最并行、最耗计算的工作——**地形生成** 与 **生物寻路**——卸载到显卡上执行，
+把服务器 CPU 从大量重复的逐点计算中解放出来。
 
 ## 核心思路
 
-Minecraft 服务端的很多计算是**天然并行**的：每个 (x, z) 高度图柱、每个区块的噪声采样
-互不依赖。这些任务在 CPU 上只能单线程逐点算，但在 GPU 上可以铺到成千上万个 work-item
-上同时算。
+Minecraft 服务端很多计算是**天然并行**的：地形密度场的每个体素、流场的每一格、每只怪的寻路
+都互不依赖。这些任务在 CPU 上只能单线程逐点算，在 GPU 上却能铺到成千上万个 work-item 上同时算。
 
-本模组内置了一个 **GPU 计算引擎**（dev.gpuaccel.gpu.GpuComputeEngine），并演示了
-一个具体工作负载：**多倍频值噪声 fBm 高度图生成**。
+本模组内置了一个 **GPU 计算引擎**（dev.gpuaccel.gpu.GpuComputeEngine），当前运行三种内核：
 
-## 实测效果（NVIDIA GTX 960，OpenCL 3.0）
+- **3D 地形密度场**（洞穴、悬空地形、矿物、含水层、岩浆）
+- **流场寻路**（生物的 GPU BFS 寻路）
+- **2D 高度图**（早期基准用，保留作参考）
 
-| 规模 | GPU | CPU（单线程） | 加速比 |
-|------|-----|--------------|--------|
-| 1024×1024（约 105 万点） | 4.9 ms | 176 ms | 约 36× |
+## 功能
 
-GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声），因此可以安全地互为回退。
+### GPU 地形（自定义世界类型 "GPU Terrain"）
+- **3D 密度地形** —— 洞穴、悬空/凸出地形、悬崖
+- **矿物** —— 煤 / 铁 / 金 / 钻石，按深度分布
+- **生物群系** —— 草原、沙漠、雪地、高山（气候噪声决定）
+- **含水层 / 岩浆** —— 海平面以下洞穴灌水，-48 层以下灌岩浆
+- **树木** —— 草原地表生成橡树
 
-## 原理
+### GPU 生物 AI（流场寻路）
+- 敌对生物顺着 **3D 流场**（8 水平方向 + 上下）朝最近的玩家移动，绕开障碍
+- **每玩家独立流场** —— 每个在线玩家都有一张 GPU 算出的流场
+- 只在玩家周围 **32 格**内吸引生物，移速较慢
 
-- LWJGL OpenCL 绑定是**无 JNI** 的：它直接加载显卡驱动自带的 OpenCL ICD 加载器
-  （Windows 上是 OpenCL.dll，Linux 上是 libOpenCL.so）。所以**不需要**额外的 OpenCL 原生库。
-- 唯一需要的是 LWJGL **核心**原生库（lwjgl.dll / liblwjgl.so）。Minecraft 自带它，
-  但为了健壮性，本模组把三个平台的核心原生库打进 jar，运行时按需解压并设置
-  org.lwjgl.librarypath（见 dev.gpuaccel.gpu.LwjglNatives）。
-- lwjgl-opencl 的 Java 绑定类通过 Forge 的 **jar-in-jar** 机制打进模组 jar。
+### 客户端界面（按 G 键）
+- GPU 设备型号 / 厂商 / 版本 / 显存 / 计算单元 / 占用率
+- 服务器 CPU / 内存 / 世界存储大小
+- **仅管理员（OP 等级 ≥ 2）可查看**
+
+### 其他
+- **CPU 回退**：无 GPU 时逐位一致回退，世界照常生成
+- **Chunky 兼容**：高度/密度缓存有上限，大规模预生成不会爆内存
+- **地狱/末地**沿用原版生成器
+- GPU 引擎开机自动初始化
 
 ## 环境要求
 
-- Minecraft **1.20.1** + Forge **47.2.0**（或 47.x）
+- Minecraft **1.20.1** + Forge **47.x**（任意 47.x 均可）
 - **Java 17**
-- 一张支持 OpenCL 的显卡（NVIDIA / AMD / Intel 核显均可；需安装对应驱动）
+- 支持 OpenCL 的显卡 + 驱动（NVIDIA / AMD / Intel 核显均可；无 GPU 时自动回退 CPU）
+
+## 安装
+
+产物有两个 jar（LWJGL 通过 jar-in-jar 打包，另带三平台 LWJGL 原生库）：
+
+- **服务端**用 `gpuaccel-1.1.0-all.jar` → 放进 `mods/`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
+- **客户端**用 `gpuaccel-1.1.0-client.jar` → 放进 `.minecraft/mods/`（只打包 OpenCL，客户端自带 LWJGL 核心）
+
+## 使用
+
+1. 新建世界时选「**GPU Terrain**」世界类型；或在 `server.properties` 里设 `level-type=gpuaccel:gpu_terrain` 并删除旧世界
+2. 进游戏按 **G** 查看 GPU / 服务器状态
+3. 可选：用 Chunky 预生成世界（缓存有上限，不会 OOM）
 
 ## 构建
 
@@ -42,62 +65,34 @@ GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声）�
     $env:JAVA_HOME = "C:\path\to\jdk-17"
     .\gradlew.bat build
 
-产物有两个 jar（LWJGL 通过 jar-in-jar 打包，另带三平台 LWJGL 原生库）：
-
-- **服务端**用 `gpuaccel-1.1.0-all.jar`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
-- **客户端**用 `gpuaccel-1.1.0-client.jar`（只打包 OpenCL，因为客户端自带 LWJGL 核心，再打包会冲突）
-
-## 自动启动
-
-服务器启动时，模组会自动初始化 GPU 引擎（检测 OpenCL 设备并编译内核），结果写入日志：
-
-- `GPU compute engine ready: ...` —— GPU 可用
-- `GPU compute engine unavailable: ...` —— 没有可用 GPU，世界生成自动回退到 CPU（结果一致）
-
-## 客户端界面（查看 GPU 占用）
-
-客户端也装上本模组后，按 **G** 键打开 GPU 状态界面，实时查看服务器 GPU 的：
-
-- 设备型号、厂商、OpenCL 版本、显存大小、计算单元数
-- 已生成高度图次数、最近一次 / 总 / 平均耗时
-
-（按键可在「选项 → 按键绑定」里修改）
-
-## 自定义世界类型（v1.0.1，接入原版世界生成）
-
-本模组新增了一个 **GPU Terrain** 世界预设：创建新世界时在「世界类型」里选 **GPU Terrain**，或在服务器的 server.properties 里设置：
-
-    level-type=gpuaccel:gpu_terrain
-
-它使用 GpuChunkGenerator：地形表面高度由 GPU 按区域（256×256 列）并行生成并缓存，每个 (x,z) 列独立计算——正是世界生成中最适合 GPU 的一类工作；没有 GPU 时自动回退到 CPU（结果一致）。
-
-主世界用 GPU 地形，**地狱/末地沿用原版生成器**；高度缓存有上限（约 128 MB），可放心配合 **Chunky** 大规模预生成而不会占满内存。
-
 ## 代码结构
 
     src/main/java/dev/gpuaccel/
-    ├── GpuAcceleratorMod.java        @Mod 入口，注册命令、懒加载引擎
+    ├── GpuAcceleratorMod.java        @Mod 入口，开机初始化引擎、注册网络
     ├── gpu/
-    │   ├── GpuComputeEngine.java     OpenCL 引擎：设备发现/上下文/内核编译/高度图
+    │   ├── GpuComputeEngine.java     OpenCL 引擎：设备/上下文/内核/密度/流场
     │   ├── GpuDeviceInfo.java        设备信息
     │   └── LwjglNatives.java         解压并定位 LWJGL 核心原生库
+    ├── worldgen/
+    │   └── GpuChunkGenerator.java    GPU 3D 密度地形生成器
+    ├── ai/
+    │   ├── FlowField.java            GPU 流场
+    │   └── MobFlowHandler.java       生物寻路（每玩家独立流场）
     ├── compute/
-    │   └── CpuNoise.java             CPU 参考实现（与 GPU 逐位一致，作回退）
-    └── command/
-        └── GpuCommand.java           /gpuaccel 命令
+    │   └── CpuNoise.java             CPU 回退（与 GPU 逐位一致）
+    ├── network/                      网络包（客户端 GUI 查询）
+    └── client/                       客户端 GUI + 按键
     src/main/resources/
-    ├── kernels/heightmap.cl          OpenCL C 内核源码
+    ├── kernels/
+    │   ├── heightmap.cl             2D 高度图内核（基准参考）
+    │   ├── density3d.cl             3D 密度场内核（地形+矿物+岩浆）
+    │   └── flowfield.cl             3D 流场内核（生物寻路）
     └── META-INF/mods.toml
 
 ## 如何扩展更多 GPU 工作负载
 
-1. 在 src/main/resources/kernels/ 下新增 OpenCL C 内核（例如红石/流体扩散、N 体物理、
-   区块噪声采样）。
-2. 在 GpuComputeEngine 中加载并 clCreateKernel 新内核，封装成一个方法。
-3. 在 GpuCommand 中加一个子命令即可。
-
-> 提示：适合 GPU 的任务要满足「大量独立小计算、数据传输开销小于计算开销」。
-> 高度图/噪声/矩阵类任务是最佳候选；强顺序依赖的 tick 逻辑（红石线、实体 AI）不适合直接搬上 GPU。
+适合 GPU 的任务要满足「大量独立小计算、数据传输开销小于计算开销」。高度图/噪声/矩阵/流体扩散/
+N 体物理/流场寻路都是最佳候选；强顺序依赖的 tick 逻辑不适合直接搬上 GPU。
 
 ## 许可
 
