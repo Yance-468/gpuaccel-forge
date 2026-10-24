@@ -64,8 +64,20 @@ __kernel void density(__global uchar* out, int width, int depth, int height,
     float density = terrain - cave * caveAmp;
 
     uchar block = 0;
-    if (density > 0.0f) block = 1;
+    if (density > 0.0f) {
+        block = 1;
+        float oreC = fbm3((float)wx * 0.12f, (float)wy * 0.12f, (float)wz * 0.12f, seed + 12345u);
+        float oreI = fbm3((float)wx * 0.12f, (float)wy * 0.12f, (float)wz * 0.12f, seed + 23456u);
+        float oreG = fbm3((float)wx * 0.12f, (float)wy * 0.12f, (float)wz * 0.12f, seed + 34567u);
+        float oreD = fbm3((float)wx * 0.12f, (float)wy * 0.12f, (float)wz * 0.12f, seed + 45678u);
+        if (oreC > 0.80f && wy >= 0 && wy <= 128) block = 11;
+        else if (oreI > 0.88f && wy >= -32 && wy <= 32) block = 12;
+        else if (oreG > 0.95f && wy <= 16) block = 13;
+        else if (oreD > 0.985f && wy <= -48) block = 14;
+    } else {
+        if (wy <= seaLevel && wy >= -48) block = 5;
+        else if (wy < -48) block = 10;
+    }
     if (wy <= minY + 1) block = 6;
-    if (block == 0 && wy <= seaLevel) block = 5;
     out[gy * (width * depth) + gz * width + gx] = block;
 }

@@ -40,9 +40,21 @@ public final class CpuNoise {
                     float cave = fbm3(wx * caveScale, wy * caveScale, wz * caveScale, seed + 7919);
                     float density = terrain - cave * caveAmp;
                     byte block = 0;
-                    if (density > 0.0f) block = 1;
+                    if (density > 0.0f) {
+                        block = 1;
+                        float oreC = fbm3(wx * 0.12f, wy * 0.12f, wz * 0.12f, seed + 12345);
+                        float oreI = fbm3(wx * 0.12f, wy * 0.12f, wz * 0.12f, seed + 23456);
+                        float oreG = fbm3(wx * 0.12f, wy * 0.12f, wz * 0.12f, seed + 34567);
+                        float oreD = fbm3(wx * 0.12f, wy * 0.12f, wz * 0.12f, seed + 45678);
+                        if (oreC > 0.80f && wy >= 0 && wy <= 128) block = 11;
+                        else if (oreI > 0.88f && wy >= -32 && wy <= 32) block = 12;
+                        else if (oreG > 0.95f && wy <= 16) block = 13;
+                        else if (oreD > 0.985f && wy <= -48) block = 14;
+                    } else {
+                        if (wy <= seaLevel && wy >= -48) block = 5;
+                        else if (wy < -48) block = 10;
+                    }
                     if (wy <= minY + 1) block = 6;
-                    if (block == 0 && wy <= seaLevel) block = 5;
                     out[row + gx] = block;
                 }
             }

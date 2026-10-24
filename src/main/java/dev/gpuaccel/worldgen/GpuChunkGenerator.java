@@ -57,6 +57,11 @@ public final class GpuChunkGenerator extends ChunkGenerator {
     private static final byte B_STONE = 1;
     private static final byte B_WATER = 5;
     private static final byte B_BEDROCK = 6;
+    private static final byte B_LAVA = 10;
+    private static final byte B_COAL = 11;
+    private static final byte B_IRON = 12;
+    private static final byte B_GOLD = 13;
+    private static final byte B_DIAMOND = 14;
 
     private final float scale;
     private final float baseHeight;
@@ -113,15 +118,48 @@ public final class GpuChunkGenerator extends ChunkGenerator {
         return CpuNoise.density3d(REGION_SIZE, REGION_SIZE, H_SAMPLES, scale, baseHeight, amplitude, CAVE_SCALE, CAVE_AMP, seed, wx, wz, MIN_Y, SEA_LEVEL);
     }
 
-    private BlockState blockFor(int y, int surface, byte d) {
+    private BlockState blockFor(int x, int z, int y, int surface, byte d) {
         if (d == B_BEDROCK || y <= MIN_Y) return Blocks.BEDROCK.defaultBlockState();
+        if (d == B_COAL) return Blocks.COAL_ORE.defaultBlockState();
+        if (d == B_IRON) return Blocks.IRON_ORE.defaultBlockState();
+        if (d == B_GOLD) return Blocks.GOLD_ORE.defaultBlockState();
+        if (d == B_DIAMOND) return Blocks.DIAMOND_ORE.defaultBlockState();
         if (d == B_STONE) {
-            if (y == surface) return surface < SEA_LEVEL ? Blocks.SAND.defaultBlockState() : Blocks.GRASS_BLOCK.defaultBlockState();
+            if (y == surface) return biomeSurface(x, z, surface);
             if (y >= surface - SURFACE_DEPTH) return Blocks.DIRT.defaultBlockState();
             return Blocks.STONE.defaultBlockState();
         }
+        if (d == B_LAVA) return Blocks.LAVA.defaultBlockState();
         if (d == B_WATER) return Blocks.WATER.defaultBlockState();
         return Blocks.AIR.defaultBlockState();
+    }
+
+    /** Simple climate-based biome: grass plains / desert sand / snow / mountain stone. */
+    private BlockState biomeSurface(int x, int z, int surfaceY) {
+        float temp = CpuNoise.fbm(x * 0.002f, z * 0.002f, seed);
+        if (surfaceY > 95) return Blocks.STONE.defaultBlockState();
+        if (surfaceY > 78) return temp > 0.5f ? Blocks.SNOW_BLOCK.defaultBlockState() : Blocks.STONE.defaultBlockState();
+        if (temp > 0.65f) return Blocks.SAND.defaultBlockState();
+        if (temp < 0.35f) return Blocks.SNOW_BLOCK.defaultBlockState();
+        return Blocks.GRASS_BLOCK.defaultBlockState();
+    }
+
+    /** Places a small oak tree (trunk + leaves) with its base at (x, y, z). */
+    private void placeTree(ChunkAccess chunk, int x, int y, int z) {
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        for (int i = 0; i < 4; i++) {
+            p.set(x, y + i, z);
+            chunk.setBlockState(p, Blocks.OAK_LOG.defaultBlockState(), false);
+        }
+        for (int dy = 3; dy <= 4; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dz == 0 && dy == 3) continue;
+                    p.set(x + dx, y + dy, z + dz);
+                    chunk.setBlockState(p, Blocks.OAK_LEAVES.defaultBlockState(), false);
+                }
+            }
+        }
     }
 
     // ---- abstract ChunkGenerator methods ----
@@ -152,7 +190,15 @@ public final class GpuChunkGenerator extends ChunkGenerator {
                 for (int y = minY; y < maxY; y++) {
                     byte d = density(region, wx, wz, y);
                     cursor.set(wx, y, wz);
-                    chunk.setBlockState(cursor, blockFor(y, surface, d), false);
+                    chunk.setBlockState(cursor, blockFor(wx, wz, y, surface, d), false);
+                }
+                // trees on grass plains (only when they fit within this chunk)
+                if (x >= 1 && x <= 14 && z >= 1 && z <= 14 && surface > MIN_Y) {
+                    byte sd = density(region, wx, surface, wz);
+                    if (sd == B_STONE && biomeSurface(wx, wz, surface).is(Blocks.GRASS_BLOCK)
+                            && CpuNoise.fbm(wx * 0.05f, wz * 0.05f, seed + 7777) > 0.90f) {
+                        placeTree(chunk, wx, surface + 1, wz);
+                    }
                 }
             }
         }
@@ -187,7 +233,7 @@ public final class GpuChunkGenerator extends ChunkGenerator {
         BlockState[] column = new BlockState[height];
         for (int i = 0; i < height; i++) {
             int y = minY + i;
-            column[i] = blockFor(y, surface, density(region, x, z, y));
+            column[i] = blockFor(x, z, y, surface, density(region, x, z, y));
         }
         return new NoiseColumn(minY, column);
     }
