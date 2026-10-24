@@ -104,6 +104,11 @@ tasks.named('jar', Jar).configure {
         exclude 'META-INF/versions/**'
         exclude 'META-INF/**'
     }
+    from(zipTree('libs/lwjgl-3.3.1.jar')) {
+        exclude 'module-info.class'
+        exclude 'META-INF/versions/**'
+        exclude 'META-INF/**'
+    }
     manifest {
         attributes([
                 'Specification-Title'     : mod_id,
