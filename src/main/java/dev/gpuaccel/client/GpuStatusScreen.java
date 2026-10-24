@@ -42,6 +42,7 @@ public class GpuStatusScreen extends Screen {
             graphics.drawString(this.font, "版本 / Version: " + s.version(), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
             graphics.drawString(this.font, "显存 / Memory: " + formatBytes(s.maxMemoryBytes()), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
             graphics.drawString(this.font, "计算单元 / Compute units: " + s.computeUnits(), this.width / 2 - 150, y, 0xFFFFFF); y += 22;
+            graphics.drawString(this.font, String.format(Locale.ROOT, "GPU 占用率 / Usage: %.1f%%", s.busyPercent()), this.width / 2 - 150, y, 0xFFFFFF); y += 22;
             graphics.drawString(this.font, "已生成高度图 / Heightmaps: " + s.heightmapCalls(), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
             graphics.drawString(this.font, "最近一次耗时 / Last: " + formatNanos(s.lastHeightmapNanos()), this.width / 2 - 150, y, 0xFFFFFF); y += 12;
             graphics.drawString(this.font, "总耗时 / Total: " + formatNanos(s.totalNanos()), this.width / 2 - 150, y, 0xFFFFFF); y += 12;

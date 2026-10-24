@@ -14,14 +14,15 @@ public record GpuStatusSnapshot(
         int computeUnits,
         int heightmapCalls,
         long totalNanos,
-        long lastHeightmapNanos
+        long lastHeightmapNanos,
+        double busyPercent
 ) {
     public static GpuStatusSnapshot empty() {
-        return new GpuStatusSnapshot(false, "等待数据 / Waiting for data", "", "", 0, 0, 0, 0, 0);
+        return new GpuStatusSnapshot(false, "等待数据 / Waiting for data", "", "", 0, 0, 0, 0, 0, 0.0);
     }
 
     public static GpuStatusSnapshot unavailable(String reason) {
-        return new GpuStatusSnapshot(false, reason == null ? "未知 / unknown" : reason, "", "", 0, 0, 0, 0, 0);
+        return new GpuStatusSnapshot(false, reason == null ? "未知 / unknown" : reason, "", "", 0, 0, 0, 0, 0, 0.0);
     }
 
     public void write(FriendlyByteBuf buf) {
@@ -34,6 +35,7 @@ public record GpuStatusSnapshot(
         buf.writeInt(heightmapCalls);
         buf.writeLong(totalNanos);
         buf.writeLong(lastHeightmapNanos);
+        buf.writeDouble(busyPercent);
     }
 
     public static GpuStatusSnapshot read(FriendlyByteBuf buf) {
@@ -46,7 +48,8 @@ public record GpuStatusSnapshot(
                 buf.readInt(),
                 buf.readInt(),
                 buf.readLong(),
-                buf.readLong()
+                buf.readLong(),
+                buf.readDouble()
         );
     }
 }

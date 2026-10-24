@@ -40,6 +40,7 @@ public final class GpuComputeEngine implements AutoCloseable {
     private int heightmapCalls;
     private long totalNanos;
     private long lastHeightmapNanos;
+    private final long startNanos;
 
     private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
         this.context = context;
@@ -50,6 +51,7 @@ public final class GpuComputeEngine implements AutoCloseable {
         this.deviceInfo = deviceInfo;
         this.maxMemoryBytes = maxMemoryBytes;
         this.computeUnits = computeUnits;
+        this.startNanos = System.nanoTime();
     }
 
     public GpuDeviceInfo deviceInfo() {
@@ -67,8 +69,16 @@ public final class GpuComputeEngine implements AutoCloseable {
                 computeUnits,
                 heightmapCalls,
                 totalNanos,
-                lastHeightmapNanos
+                lastHeightmapNanos,
+                busyPercent()
         );
+    }
+
+    /** Estimated GPU busy fraction (0-100) since the engine started: total compute time / elapsed time. */
+    public double busyPercent() {
+        long elapsed = System.nanoTime() - startNanos;
+        if (elapsed <= 0) return 0.0;
+        return Math.min(100.0, (double) totalNanos / elapsed * 100.0);
     }
 
     /** Human-readable reason for the last OpenCL failure, or {@code null}. */
