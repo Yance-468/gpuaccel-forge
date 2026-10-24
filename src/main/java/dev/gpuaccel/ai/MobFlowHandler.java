@@ -20,6 +20,10 @@ import java.util.UUID;
  */
 @Mod.EventBusSubscriber(modid = GpuAcceleratorMod.MODID)
 public final class MobFlowHandler {
+    /** Only mobs within this many blocks of the player are attracted. */
+    private static final double ATTRACTION_RADIUS = 32.0;
+    private static final float MOVE_SPEED = 0.9f;
+
     private static final Map<UUID, FlowField> FIELDS = new HashMap<>();
     private static int refreshCounter;
 
@@ -42,9 +46,12 @@ public final class MobFlowHandler {
                 for (Monster mob : level.getEntitiesOfClass(Monster.class, field.regionAabb())) {
                     Vec3 dir = field.directionAt(mob.blockPosition());
                     if (dir == null || dir == Vec3.ZERO) continue;
+                    double dx = mob.getX() - field.targetX();
+                    double dz = mob.getZ() - field.targetZ();
+                    if (dx * dx + dz * dz > ATTRACTION_RADIUS * ATTRACTION_RADIUS) continue;
                     double tx = mob.getX() + dir.x * FlowField.CELL_SIZE;
                     double tz = mob.getZ() + dir.z * FlowField.CELL_SIZE;
-                    mob.getMoveControl().setWantedPosition(tx, mob.getY(), tz, 1.3);
+                    mob.getMoveControl().setWantedPosition(tx, mob.getY(), tz, MOVE_SPEED);
                     if (dir.y > 0) mob.setJumping(true);
                     mob.getNavigation().stop();
                 }

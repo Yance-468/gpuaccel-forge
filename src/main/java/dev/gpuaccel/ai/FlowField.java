@@ -24,12 +24,18 @@ public final class FlowField {
     private final int originX;
     private final int originZ;
     private final int minY;
+    private final int targetX;
+    private final int targetY;
+    private final int targetZ;
     private final byte[] dirs;
 
-    private FlowField(int originX, int originZ, int minY, byte[] dirs) {
+    private FlowField(int originX, int originZ, int minY, int targetX, int targetY, int targetZ, byte[] dirs) {
         this.originX = originX;
         this.originZ = originZ;
         this.minY = minY;
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.targetZ = targetZ;
         this.dirs = dirs;
     }
 
@@ -61,8 +67,12 @@ public final class FlowField {
         walkable[targetY * (NX * NZ) + targetZ * NX + targetX] = 1;
 
         byte[] dirs = engine.flowField(walkable, NX, NY, NZ, targetX, targetY, targetZ);
-        return new FlowField(originX, originZ, minY, dirs);
+        return new FlowField(originX, originZ, minY, target.getX(), target.getY(), target.getZ(), dirs);
     }
+
+    public int targetX() { return targetX; }
+    public int targetY() { return targetY; }
+    public int targetZ() { return targetZ; }
 
     /** Flow direction for a world position, or null if outside/unknown. */
     public Vec3 directionAt(BlockPos pos) {
