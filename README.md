@@ -44,8 +44,8 @@ GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声）�
 
 产物有两个 jar（LWJGL 通过 jar-in-jar 打包，另带三平台 LWJGL 原生库）：
 
-- **服务端**用 `gpuaccel-1.0.5-all.jar`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
-- **客户端**用 `gpuaccel-1.0.5-client.jar`（只打包 OpenCL，因为客户端自带 LWJGL 核心，再打包会冲突）
+- **服务端**用 `gpuaccel-1.0.6-all.jar`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
+- **客户端**用 `gpuaccel-1.0.6-client.jar`（只打包 OpenCL，因为客户端自带 LWJGL 核心，再打包会冲突）
 
 ## 自动启动
 

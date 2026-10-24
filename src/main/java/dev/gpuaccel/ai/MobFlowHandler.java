@@ -22,7 +22,7 @@ import java.util.UUID;
 public final class MobFlowHandler {
     /** Only mobs within this many blocks of the player are attracted. */
     private static final double ATTRACTION_RADIUS = 32.0;
-    private static final float MOVE_SPEED = 0.9f;
+    private static final float MOVE_SPEED = 0.5f;
 
     private static final Map<UUID, FlowField> FIELDS = new HashMap<>();
     private static int refreshCounter;
