@@ -104,11 +104,12 @@ public class GpuAcceleratorMod {
         try {
             String heightmap = readResource("/kernels/heightmap.cl");
             String density = readResource("/kernels/density3d.cl");
-            if (heightmap == null || density == null) {
+            String flowfield = readResource("/kernels/flowfield.cl");
+            if (heightmap == null || density == null || flowfield == null) {
                 LOGGER.error("Failed to load a kernel resource.");
                 return null;
             }
-            return heightmap + "\n" + density;
+            return heightmap + "\n" + density + "\n" + flowfield;
         } catch (IOException e) {
             LOGGER.error("Failed to read kernels", e);
             return null;

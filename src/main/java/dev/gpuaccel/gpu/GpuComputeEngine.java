@@ -34,6 +34,10 @@ public final class GpuComputeEngine implements AutoCloseable {
     private final long program;
     private final long heightmapKernel;
     private final long densityKernel;
+    private final long ffResetKernel;
+    private final long ffFloodKernel;
+    private final long ffFlowKernel;
+    private final long ffTargetKernel;
     private final GpuDeviceInfo deviceInfo;
     private final long maxMemoryBytes;
     private final int computeUnits;
@@ -43,13 +47,17 @@ public final class GpuComputeEngine implements AutoCloseable {
     private long lastHeightmapNanos;
     private final long startNanos;
 
-    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
+    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, long ffResetKernel, long ffFloodKernel, long ffFlowKernel, long ffTargetKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
         this.context = context;
         this.queue = queue;
         this.device = device;
         this.program = program;
         this.heightmapKernel = heightmapKernel;
         this.densityKernel = densityKernel;
+        this.ffResetKernel = ffResetKernel;
+        this.ffFloodKernel = ffFloodKernel;
+        this.ffFlowKernel = ffFlowKernel;
+        this.ffTargetKernel = ffTargetKernel;
         this.deviceInfo = deviceInfo;
         this.maxMemoryBytes = maxMemoryBytes;
         this.computeUnits = computeUnits;
@@ -179,8 +187,16 @@ public final class GpuComputeEngine implements AutoCloseable {
                 check(err.get(0));
                 long densityKernel = clCreateKernel(program, "density", err);
                 check(err.get(0));
+                long ffReset = clCreateKernel(program, "ff_reset", err);
+                check(err.get(0));
+                long ffTarget = clCreateKernel(program, "ff_target", err);
+                check(err.get(0));
+                long ffFlood = clCreateKernel(program, "ff_flood", err);
+                check(err.get(0));
+                long ffFlow = clCreateKernel(program, "ff_flow", err);
+                check(err.get(0));
 
-                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, info, maxMem, units);
+                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, ffReset, ffFlood, ffFlow, ffTarget, info, maxMem, units);
             }
         } catch (Throwable t) {
             // ensureOpenCl() already records a detailed reason; keep it if present.
@@ -275,10 +291,76 @@ public final class GpuComputeEngine implements AutoCloseable {
         }
     }
 
+    /** Computes a flow field (per-cell direction toward a target) on the GPU via BFS flood-fill. */
+    public synchronized byte[] flowField(byte[] walkable, int n, int targetX, int targetZ) {
+        long start = System.nanoTime();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer err = stack.mallocInt(1);
+            int total = n * n;
+            ByteBuffer walk = MemoryUtil.memAlloc(total);
+            walk.put(walkable).flip();
+            ByteBuffer outHost = MemoryUtil.memAlloc(total);
+
+            long walkDev = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, walk, err);
+            check(err.get(0));
+            long distDev = clCreateBuffer(context, CL_MEM_READ_WRITE, (long) total * 4L, err);
+            check(err.get(0));
+            long outDev = clCreateBuffer(context, CL_MEM_WRITE_ONLY, total, err);
+            check(err.get(0));
+            try {
+                PointerBuffer gws1 = stack.mallocPointer(1).put(total).flip();
+                PointerBuffer gws2 = stack.mallocPointer(2).put(n).put(n).flip();
+
+                check(clSetKernelArg1p(ffResetKernel, 0, distDev));
+                check(clSetKernelArg1i(ffResetKernel, 1, n));
+                check(clEnqueueNDRangeKernel(queue, ffResetKernel, 1, null, gws1, null, null, null));
+
+                check(clSetKernelArg1p(ffTargetKernel, 0, distDev));
+                check(clSetKernelArg1i(ffTargetKernel, 1, targetZ * n + targetX));
+                check(clEnqueueNDRangeKernel(queue, ffTargetKernel, 1, null, gws1, null, null, null));
+
+                check(clSetKernelArg1p(ffFloodKernel, 0, distDev));
+                check(clSetKernelArg1p(ffFloodKernel, 1, walkDev));
+                check(clSetKernelArg1i(ffFloodKernel, 2, n));
+                int iterations = 2 * n + 4;
+                for (int it = 0; it < iterations; it++) {
+                    check(clEnqueueNDRangeKernel(queue, ffFloodKernel, 2, null, gws2, null, null, null));
+                }
+
+                check(clSetKernelArg1p(ffFlowKernel, 0, distDev));
+                check(clSetKernelArg1p(ffFlowKernel, 1, walkDev));
+                check(clSetKernelArg1p(ffFlowKernel, 2, outDev));
+                check(clSetKernelArg1i(ffFlowKernel, 3, n));
+                check(clEnqueueNDRangeKernel(queue, ffFlowKernel, 2, null, gws2, null, null, null));
+                check(clFinish(queue));
+
+                check(clEnqueueReadBuffer(queue, outDev, true, 0, outHost, null, null));
+                byte[] result = new byte[total];
+                outHost.get(result);
+                return result;
+            } finally {
+                clReleaseMemObject(walkDev);
+                clReleaseMemObject(distDev);
+                clReleaseMemObject(outDev);
+                MemoryUtil.memFree(walk);
+                MemoryUtil.memFree(outHost);
+            }
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            heightmapCalls++;
+            totalNanos += elapsed;
+            lastHeightmapNanos = elapsed;
+        }
+    }
+
     @Override
     public void close() {
         clReleaseKernel(heightmapKernel);
         clReleaseKernel(densityKernel);
+        clReleaseKernel(ffResetKernel);
+        clReleaseKernel(ffFloodKernel);
+        clReleaseKernel(ffFlowKernel);
+        clReleaseKernel(ffTargetKernel);
         clReleaseProgram(program);
         clReleaseCommandQueue(queue);
         clReleaseContext(context);
