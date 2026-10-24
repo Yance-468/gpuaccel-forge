@@ -1,5 +1,6 @@
 package dev.gpuaccel.gpu;
 
+import dev.gpuaccel.network.GpuStatusSnapshot;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.opencl.CL;
 import org.lwjgl.system.Configuration;
@@ -33,18 +34,41 @@ public final class GpuComputeEngine implements AutoCloseable {
     private final long program;
     private final long heightmapKernel;
     private final GpuDeviceInfo deviceInfo;
+    private final long maxMemoryBytes;
+    private final int computeUnits;
 
-    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, GpuDeviceInfo deviceInfo) {
+    private int heightmapCalls;
+    private long totalNanos;
+    private long lastHeightmapNanos;
+
+    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
         this.context = context;
         this.queue = queue;
         this.device = device;
         this.program = program;
         this.heightmapKernel = heightmapKernel;
         this.deviceInfo = deviceInfo;
+        this.maxMemoryBytes = maxMemoryBytes;
+        this.computeUnits = computeUnits;
     }
 
     public GpuDeviceInfo deviceInfo() {
         return deviceInfo;
+    }
+
+    /** Builds a snapshot of the current GPU status for reporting to clients. */
+    public GpuStatusSnapshot snapshot() {
+        return new GpuStatusSnapshot(
+                true,
+                deviceInfo.name(),
+                deviceInfo.vendor(),
+                deviceInfo.version(),
+                maxMemoryBytes,
+                computeUnits,
+                heightmapCalls,
+                totalNanos,
+                lastHeightmapNanos
+        );
     }
 
     /** Human-readable reason for the last OpenCL failure, or {@code null}. */
@@ -118,6 +142,9 @@ public final class GpuComputeEngine implements AutoCloseable {
                         info(dev, CL_DEVICE_VERSION, true),
                         deviceTypeName(dev));
 
+                long maxMem = deviceLong(stack, dev, CL_DEVICE_GLOBAL_MEM_SIZE);
+                int units = deviceInt(stack, dev, CL_DEVICE_MAX_COMPUTE_UNITS);
+
                 IntBuffer err = stack.mallocInt(1);
                 long context = clCreateContext((PointerBuffer) null, dev, null, MemoryUtil.NULL, err);
                 check(err.get(0));
@@ -138,7 +165,7 @@ public final class GpuComputeEngine implements AutoCloseable {
                 long kernel = clCreateKernel(program, "heightmap", err);
                 check(err.get(0));
 
-                return new GpuComputeEngine(context, queue, dev, program, kernel, info);
+                return new GpuComputeEngine(context, queue, dev, program, kernel, info, maxMem, units);
             }
         } catch (Throwable t) {
             // ensureOpenCl() already records a detailed reason; keep it if present.
@@ -151,6 +178,7 @@ public final class GpuComputeEngine implements AutoCloseable {
 
     /** Generates a heightmap entirely on the GPU, at the given world-coordinate offset. */
     public synchronized float[] heightmap(int w, int h, float scale, float base, float amp, int seed, int offsetX, int offsetZ) {
+        long start = System.nanoTime();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer err = stack.mallocInt(1);
             FloatBuffer out = MemoryUtil.memAllocFloat(w * h);
@@ -177,6 +205,11 @@ public final class GpuComputeEngine implements AutoCloseable {
                 clReleaseMemObject(buffer);
                 MemoryUtil.memFree(out);
             }
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            heightmapCalls++;
+            totalNanos += elapsed;
+            lastHeightmapNanos = elapsed;
         }
     }
 
@@ -223,6 +256,18 @@ public final class GpuComputeEngine implements AutoCloseable {
             if ((type & CL_DEVICE_TYPE_ACCELERATOR) != 0) return "ACCELERATOR";
             return "OTHER";
         }
+    }
+
+    private static long deviceLong(MemoryStack stack, long dev, int param) {
+        LongBuffer val = stack.mallocLong(1);
+        check(clGetDeviceInfo(dev, param, val, null));
+        return val.get(0);
+    }
+
+    private static int deviceInt(MemoryStack stack, long dev, int param) {
+        IntBuffer val = stack.mallocInt(1);
+        check(clGetDeviceInfo(dev, param, val, null));
+        return val.get(0);
     }
 
     private static String info(long obj, int param, boolean device) {

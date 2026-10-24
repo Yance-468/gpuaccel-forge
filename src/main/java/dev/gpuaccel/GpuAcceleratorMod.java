@@ -1,6 +1,8 @@
 package dev.gpuaccel;
 
 import dev.gpuaccel.gpu.GpuComputeEngine;
+import dev.gpuaccel.network.GpuNetwork;
+import dev.gpuaccel.network.GpuStatusSnapshot;
 import dev.gpuaccel.worldgen.GpuWorldTypes;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.server.ServerStartingEvent;
@@ -30,6 +32,7 @@ public class GpuAcceleratorMod {
     public GpuAcceleratorMod() {
         MinecraftForge.EVENT_BUS.register(this);
         GpuWorldTypes.register(FMLJavaModLoadingContext.get().getModEventBus());
+        GpuNetwork.register();
     }
 
     public static GpuComputeEngine engine() {
@@ -52,6 +55,15 @@ public class GpuAcceleratorMod {
             }
         }
         return engine;
+    }
+
+    /** Snapshot of the current GPU status, sent to the client GUI. */
+    public static GpuStatusSnapshot status() {
+        GpuComputeEngine e = engine;
+        if (e != null) {
+            return e.snapshot();
+        }
+        return GpuStatusSnapshot.unavailable(GpuComputeEngine.lastError());
     }
 
     private static String loadKernel() {
