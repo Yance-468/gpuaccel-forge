@@ -1,6 +1,7 @@
 package dev.gpuaccel.ai;
 
 import dev.gpuaccel.GpuAcceleratorMod;
+import dev.gpuaccel.gpu.GpuComputeEngine;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -11,6 +12,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -41,18 +43,51 @@ public final class MobFlowHandler {
         }
         if (FIELDS.isEmpty()) return;
 
+        GpuComputeEngine engine = GpuAcceleratorMod.engine();
+        if (engine == null) return;
+
         for (ServerLevel level : server.getAllLevels()) {
             for (FlowField field : FIELDS.values()) {
-                for (Monster mob : level.getEntitiesOfClass(Monster.class, field.regionAabb())) {
+                List<Monster> mobs = level.getEntitiesOfClass(Monster.class, field.regionAabb());
+                int n = mobs.size();
+                if (n == 0) continue;
+
+                float[] positions = new float[n * 3];
+                float[] flow = new float[n * 3];
+                for (int i = 0; i < n; i++) {
+                    Monster mob = mobs.get(i);
                     Vec3 dir = field.directionAt(mob.blockPosition());
-                    if (dir == null || dir == Vec3.ZERO) continue;
+                    if (dir == null) dir = Vec3.ZERO;
                     double dx = mob.getX() - field.targetX();
                     double dz = mob.getZ() - field.targetZ();
-                    if (dx * dx + dz * dz > ATTRACTION_RADIUS * ATTRACTION_RADIUS) continue;
-                    double tx = mob.getX() + dir.x * FlowField.CELL_SIZE;
-                    double tz = mob.getZ() + dir.z * FlowField.CELL_SIZE;
+                    if (dx * dx + dz * dz > ATTRACTION_RADIUS * ATTRACTION_RADIUS) dir = Vec3.ZERO;
+                    positions[i * 3] = (float) mob.getX();
+                    positions[i * 3 + 1] = (float) mob.getY();
+                    positions[i * 3 + 2] = (float) mob.getZ();
+                    flow[i * 3] = (float) dir.x;
+                    flow[i * 3 + 1] = (float) dir.y;
+                    flow[i * 3 + 2] = (float) dir.z;
+                }
+
+                float[] steering;
+                try {
+                    steering = engine.boids(positions, flow, n);
+                } catch (Throwable t) {
+                    steering = null;
+                }
+
+                for (int i = 0; i < n; i++) {
+                    Monster mob = mobs.get(i);
+                    float sx = steering != null ? steering[i * 3] : flow[i * 3];
+                    float sy = steering != null ? steering[i * 3 + 1] : flow[i * 3 + 1];
+                    float sz = steering != null ? steering[i * 3 + 2] : flow[i * 3 + 2];
+                    double len = Math.sqrt(sx * sx + sz * sz);
+                    if (len < 0.001) continue;
+                    double nx = sx / len, nz = sz / len;
+                    double tx = mob.getX() + nx * FlowField.CELL_SIZE;
+                    double tz = mob.getZ() + nz * FlowField.CELL_SIZE;
                     mob.getMoveControl().setWantedPosition(tx, mob.getY(), tz, MOVE_SPEED);
-                    if (dir.y > 0) mob.setJumping(true);
+                    if (sy > 0.1) mob.setJumping(true);
                     mob.getNavigation().stop();
                 }
             }

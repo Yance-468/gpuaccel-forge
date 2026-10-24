@@ -38,6 +38,7 @@ public final class GpuComputeEngine implements AutoCloseable {
     private final long ffFloodKernel;
     private final long ffFlowKernel;
     private final long ffTargetKernel;
+    private final long boidsKernel;
     private final GpuDeviceInfo deviceInfo;
     private final long maxMemoryBytes;
     private final int computeUnits;
@@ -47,7 +48,7 @@ public final class GpuComputeEngine implements AutoCloseable {
     private long lastHeightmapNanos;
     private final long startNanos;
 
-    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, long ffResetKernel, long ffFloodKernel, long ffFlowKernel, long ffTargetKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
+    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, long ffResetKernel, long ffFloodKernel, long ffFlowKernel, long ffTargetKernel, long boidsKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
         this.context = context;
         this.queue = queue;
         this.device = device;
@@ -58,6 +59,7 @@ public final class GpuComputeEngine implements AutoCloseable {
         this.ffFloodKernel = ffFloodKernel;
         this.ffFlowKernel = ffFlowKernel;
         this.ffTargetKernel = ffTargetKernel;
+        this.boidsKernel = boidsKernel;
         this.deviceInfo = deviceInfo;
         this.maxMemoryBytes = maxMemoryBytes;
         this.computeUnits = computeUnits;
@@ -195,8 +197,10 @@ public final class GpuComputeEngine implements AutoCloseable {
                 check(err.get(0));
                 long ffFlow = clCreateKernel(program, "ff_flow", err);
                 check(err.get(0));
+                long boids = clCreateKernel(program, "boids", err);
+                check(err.get(0));
 
-                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, ffReset, ffFlood, ffFlow, ffTarget, info, maxMem, units);
+                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, ffReset, ffFlood, ffFlow, ffTarget, boids, info, maxMem, units);
             }
         } catch (Throwable t) {
             // ensureOpenCl() already records a detailed reason; keep it if present.
@@ -357,6 +361,51 @@ public final class GpuComputeEngine implements AutoCloseable {
         }
     }
 
+    /** Computes per-mob steering (boids + flow field) on the GPU. */
+    public synchronized float[] boids(float[] positions, float[] flow, int n) {
+        long start = System.nanoTime();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer err = stack.mallocInt(1);
+            FloatBuffer posHost = MemoryUtil.memAllocFloat(n * 3);
+            posHost.put(positions, 0, n * 3).flip();
+            FloatBuffer flowHost = MemoryUtil.memAllocFloat(n * 3);
+            flowHost.put(flow, 0, n * 3).flip();
+            FloatBuffer outHost = MemoryUtil.memAllocFloat(n * 3);
+
+            long posDev = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, posHost, err);
+            check(err.get(0));
+            long flowDev = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, flowHost, err);
+            check(err.get(0));
+            long outDev = clCreateBuffer(context, CL_MEM_WRITE_ONLY, (long) n * 3L * 4L, err);
+            check(err.get(0));
+            try {
+                check(clSetKernelArg1p(boidsKernel, 0, posDev));
+                check(clSetKernelArg1p(boidsKernel, 1, flowDev));
+                check(clSetKernelArg1p(boidsKernel, 2, outDev));
+                check(clSetKernelArg1i(boidsKernel, 3, n));
+                PointerBuffer gws = stack.mallocPointer(1).put(n).flip();
+                check(clEnqueueNDRangeKernel(queue, boidsKernel, 1, null, gws, null, null, null));
+                check(clFinish(queue));
+                check(clEnqueueReadBuffer(queue, outDev, true, 0, outHost, null, null));
+                float[] result = new float[n * 3];
+                outHost.get(result);
+                return result;
+            } finally {
+                clReleaseMemObject(posDev);
+                clReleaseMemObject(flowDev);
+                clReleaseMemObject(outDev);
+                MemoryUtil.memFree(posHost);
+                MemoryUtil.memFree(flowHost);
+                MemoryUtil.memFree(outHost);
+            }
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            heightmapCalls++;
+            totalNanos += elapsed;
+            lastHeightmapNanos = elapsed;
+        }
+    }
+
     @Override
     public void close() {
         clReleaseKernel(heightmapKernel);
@@ -365,6 +414,7 @@ public final class GpuComputeEngine implements AutoCloseable {
         clReleaseKernel(ffFloodKernel);
         clReleaseKernel(ffFlowKernel);
         clReleaseKernel(ffTargetKernel);
+        clReleaseKernel(boidsKernel);
         clReleaseProgram(program);
         clReleaseCommandQueue(queue);
         clReleaseContext(context);

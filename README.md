@@ -1,4 +1,4 @@
-# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
+﻿# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
 
 让 **GPU 参与服务器加速运算** 的 Forge 服务端模组。它通过 OpenCL（LWJGL 绑定）把
 两类最并行、最耗计算的工作——**地形生成** 与 **生物寻路**——卸载到显卡上执行，
@@ -50,8 +50,8 @@ Minecraft 服务端很多计算是**天然并行**的：地形密度场的每个
 
 产物有两个 jar（LWJGL 通过 jar-in-jar 打包，另带三平台 LWJGL 原生库）：
 
-- **服务端**用 `gpuaccel-1.1.0-all.jar` → 放进 `mods/`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
-- **客户端**用 `gpuaccel-1.1.0-client.jar` → 放进 `.minecraft/mods/`（只打包 OpenCL，客户端自带 LWJGL 核心）
+- **服务端**用 `gpuaccel-1.1.1-all.jar` → 放进 `mods/`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
+- **客户端**用 `gpuaccel-1.1.1-client.jar` → 放进 `.minecraft/mods/`（只打包 OpenCL，客户端自带 LWJGL 核心）
 
 ## 使用
 
