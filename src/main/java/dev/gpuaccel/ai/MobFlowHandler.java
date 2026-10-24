@@ -5,7 +5,7 @@ import dev.gpuaccel.gpu.GpuComputeEngine;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -48,14 +48,14 @@ public final class MobFlowHandler {
 
         for (ServerLevel level : server.getAllLevels()) {
             for (FlowField field : FIELDS.values()) {
-                List<Monster> mobs = level.getEntitiesOfClass(Monster.class, field.regionAabb());
+                List<Mob> mobs = level.getEntitiesOfClass(Mob.class, field.regionAabb());
                 int n = mobs.size();
                 if (n == 0) continue;
 
                 float[] positions = new float[n * 3];
                 float[] flow = new float[n * 3];
                 for (int i = 0; i < n; i++) {
-                    Monster mob = mobs.get(i);
+                    Mob mob = mobs.get(i);
                     Vec3 dir = field.directionAt(mob.blockPosition());
                     if (dir == null) dir = Vec3.ZERO;
                     double dx = mob.getX() - field.targetX();
@@ -77,7 +77,7 @@ public final class MobFlowHandler {
                 }
 
                 for (int i = 0; i < n; i++) {
-                    Monster mob = mobs.get(i);
+                    Mob mob = mobs.get(i);
                     float sx = steering != null ? steering[i * 3] : flow[i * 3];
                     float sy = steering != null ? steering[i * 3 + 1] : flow[i * 3 + 1];
                     float sz = steering != null ? steering[i * 3 + 2] : flow[i * 3 + 2];
