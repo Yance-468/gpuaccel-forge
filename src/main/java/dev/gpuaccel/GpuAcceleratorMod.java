@@ -101,12 +101,24 @@ public class GpuAcceleratorMod {
     }
 
     private static String loadKernel() {
-        try (InputStream in = GpuAcceleratorMod.class.getResourceAsStream("/kernels/heightmap.cl")) {
+        try {
+            String heightmap = readResource("/kernels/heightmap.cl");
+            String density = readResource("/kernels/density3d.cl");
+            if (heightmap == null || density == null) {
+                LOGGER.error("Failed to load a kernel resource.");
+                return null;
+            }
+            return heightmap + "\n" + density;
+        } catch (IOException e) {
+            LOGGER.error("Failed to read kernels", e);
+            return null;
+        }
+    }
+
+    private static String readResource(String path) throws IOException {
+        try (InputStream in = GpuAcceleratorMod.class.getResourceAsStream(path)) {
             if (in == null) return null;
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            LOGGER.error("Failed to read heightmap.cl", e);
-            return null;
         }
     }
 

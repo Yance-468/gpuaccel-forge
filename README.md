@@ -1,4 +1,4 @@
-# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
+﻿# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
 
 让 **GPU 参与服务器加速运算** 的 Forge 服务端模组。它通过 OpenCL（LWJGL 绑定）把
 适合并行的计算——地形高度图生成、CPU/GPU 基准对比——卸载到显卡上执行，把服务器 CPU
@@ -44,8 +44,8 @@ GPU 与 CPU 输出**逐位一致**（两者使用同一整数哈希值噪声）�
 
 产物有两个 jar（LWJGL 通过 jar-in-jar 打包，另带三平台 LWJGL 原生库）：
 
-- **服务端**用 `gpuaccel-1.0.1-all.jar`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
-- **客户端**用 `gpuaccel-1.0.1-client.jar`（只打包 OpenCL，因为客户端自带 LWJGL 核心，再打包会冲突）
+- **服务端**用 `gpuaccel-1.0.2-all.jar`（打包了 LWJGL 核心 + OpenCL，因为专用服务器不带 LWJGL）
+- **客户端**用 `gpuaccel-1.0.2-client.jar`（只打包 OpenCL，因为客户端自带 LWJGL 核心，再打包会冲突）
 
 ## 自动启动
 

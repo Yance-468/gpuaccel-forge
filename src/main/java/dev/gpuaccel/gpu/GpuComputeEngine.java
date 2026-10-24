@@ -33,6 +33,7 @@ public final class GpuComputeEngine implements AutoCloseable {
     private final long device;
     private final long program;
     private final long heightmapKernel;
+    private final long densityKernel;
     private final GpuDeviceInfo deviceInfo;
     private final long maxMemoryBytes;
     private final int computeUnits;
@@ -42,12 +43,13 @@ public final class GpuComputeEngine implements AutoCloseable {
     private long lastHeightmapNanos;
     private final long startNanos;
 
-    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
+    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
         this.context = context;
         this.queue = queue;
         this.device = device;
         this.program = program;
         this.heightmapKernel = heightmapKernel;
+        this.densityKernel = densityKernel;
         this.deviceInfo = deviceInfo;
         this.maxMemoryBytes = maxMemoryBytes;
         this.computeUnits = computeUnits;
@@ -175,8 +177,10 @@ public final class GpuComputeEngine implements AutoCloseable {
                 }
                 long kernel = clCreateKernel(program, "heightmap", err);
                 check(err.get(0));
+                long densityKernel = clCreateKernel(program, "density", err);
+                check(err.get(0));
 
-                return new GpuComputeEngine(context, queue, dev, program, kernel, info, maxMem, units);
+                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, info, maxMem, units);
             }
         } catch (Throwable t) {
             // ensureOpenCl() already records a detailed reason; keep it if present.
@@ -229,9 +233,52 @@ public final class GpuComputeEngine implements AutoCloseable {
         return heightmap(w, h, scale, base, amp, seed, 0, 0);
     }
 
+    /** Generates a 3D terrain density field (one byte per voxel) entirely on the GPU. */
+    public synchronized byte[] density3d(int w, int d, int hSamples, float scale, float base, float amp, float caveScale, float caveAmp, int seed, int offsetX, int offsetZ, int minY, int seaLevel) {
+        long start = System.nanoTime();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer err = stack.mallocInt(1);
+            ByteBuffer out = MemoryUtil.memAlloc(w * d * hSamples);
+            long buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, (long) w * d * hSamples, err);
+            check(err.get(0));
+            try {
+                check(clSetKernelArg1p(densityKernel, 0, buffer));
+                check(clSetKernelArg1i(densityKernel, 1, w));
+                check(clSetKernelArg1i(densityKernel, 2, d));
+                check(clSetKernelArg1i(densityKernel, 3, hSamples));
+                check(clSetKernelArg1f(densityKernel, 4, scale));
+                check(clSetKernelArg1f(densityKernel, 5, base));
+                check(clSetKernelArg1f(densityKernel, 6, amp));
+                check(clSetKernelArg1f(densityKernel, 7, caveScale));
+                check(clSetKernelArg1f(densityKernel, 8, caveAmp));
+                check(clSetKernelArg1i(densityKernel, 9, seed));
+                check(clSetKernelArg1i(densityKernel, 10, offsetX));
+                check(clSetKernelArg1i(densityKernel, 11, offsetZ));
+                check(clSetKernelArg1i(densityKernel, 12, minY));
+                check(clSetKernelArg1i(densityKernel, 13, seaLevel));
+                PointerBuffer gws = stack.mallocPointer(3).put(w).put(d).put(hSamples).flip();
+                check(clEnqueueNDRangeKernel(queue, densityKernel, 3, null, gws, null, null, null));
+                check(clFinish(queue));
+                check(clEnqueueReadBuffer(queue, buffer, true, 0, out, null, null));
+                byte[] result = new byte[w * d * hSamples];
+                out.get(result);
+                return result;
+            } finally {
+                clReleaseMemObject(buffer);
+                MemoryUtil.memFree(out);
+            }
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            heightmapCalls++;
+            totalNanos += elapsed;
+            lastHeightmapNanos = elapsed;
+        }
+    }
+
     @Override
     public void close() {
         clReleaseKernel(heightmapKernel);
+        clReleaseKernel(densityKernel);
         clReleaseProgram(program);
         clReleaseCommandQueue(queue);
         clReleaseContext(context);

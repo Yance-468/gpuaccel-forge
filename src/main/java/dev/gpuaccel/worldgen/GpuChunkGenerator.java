@@ -28,12 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
- * A {@link ChunkGenerator} whose terrain surface height is generated on the GPU.
- * Every (x, z) column is independent, so the whole region is computed in one OpenCL
- * kernel invocation and cached per region.
- *
- * <p>Terrain model (simple, deterministic): bedrock at the bottom, stone, then a few
- * dirt blocks, then grass/sand at the surface, water below sea level, air above.</p>
+ * A {@link ChunkGenerator} whose terrain (surface + caves + overhangs) is a 3D density field
+ * generated on the GPU. The density is sampled every {@link #Y_STEP} blocks vertically.
  */
 public final class GpuChunkGenerator extends ChunkGenerator {
 
@@ -50,17 +46,24 @@ public final class GpuChunkGenerator extends ChunkGenerator {
     private static final int MIN_Y = -64;
     private static final int WORLD_HEIGHT = 384;
     private static final int REGION_SIZE = 256;
+    private static final int Y_STEP = 4;
+    private static final int H_SAMPLES = WORLD_HEIGHT / Y_STEP;
     private static final int SURFACE_DEPTH = 3;
-    /** Upper bound on cached 256x256 regions (~256 KB each) to keep memory bounded during large pre-generation (e.g. Chunky). */
-    private static final int MAX_CACHED_REGIONS = 512;
+    private static final int MAX_CACHED_REGIONS = 8;
+    private static final float CAVE_SCALE = 0.06f;
+    private static final float CAVE_AMP = 35.0f;
+
+    private static final byte B_AIR = 0;
+    private static final byte B_STONE = 1;
+    private static final byte B_WATER = 5;
+    private static final byte B_BEDROCK = 6;
 
     private final float scale;
     private final float baseHeight;
     private final float amplitude;
     private final int seed;
 
-    /** Region-keyed cache of GPU-generated heightmaps (region of REGION_SIZE x REGION_SIZE columns). */
-    private final ConcurrentHashMap<Long, float[]> heightCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, byte[]> densityCache = new ConcurrentHashMap<>();
 
     public GpuChunkGenerator(BiomeSource biomeSource, float scale, float baseHeight, float amplitude, int seed) {
         super(biomeSource);
@@ -75,43 +78,49 @@ public final class GpuChunkGenerator extends ChunkGenerator {
         return CODEC;
     }
 
-    // ---- height lookup with region caching ----
+    // ---- density lookup with region caching ----
 
-    private float getHeightAt(int x, int z) {
+    private byte[] regionAt(int x, int z) {
         int rx = Math.floorDiv(x, REGION_SIZE);
         int rz = Math.floorDiv(z, REGION_SIZE);
         long key = ((long) rx << 32) ^ (rz & 0xFFFFFFFFL);
-        float[] region = heightCache.get(key);
+        byte[] region = densityCache.get(key);
         if (region == null) {
-            float[] computed = generateRegion(rx, rz);
-            float[] existing = heightCache.putIfAbsent(key, computed);
+            byte[] computed = generateRegion(rx, rz);
+            byte[] existing = densityCache.putIfAbsent(key, computed);
             region = existing != null ? existing : computed;
-            // Keep memory bounded during large pre-generation (e.g. Chunky).
-            if (heightCache.size() > MAX_CACHED_REGIONS) {
-                heightCache.clear();
+            if (densityCache.size() > MAX_CACHED_REGIONS) {
+                densityCache.clear();
             }
         }
-        int lx = x - rx * REGION_SIZE;
-        int lz = z - rz * REGION_SIZE;
-        return region[lz * REGION_SIZE + lx];
+        return region;
     }
 
-    private float[] generateRegion(int rx, int rz) {
+    private byte density(byte[] region, int wx, int wz, int wy) {
+        int gx = Math.floorMod(wx, REGION_SIZE);
+        int gz = Math.floorMod(wz, REGION_SIZE);
+        int gy = (wy - MIN_Y) / Y_STEP;
+        return region[gy * (REGION_SIZE * REGION_SIZE) + gz * REGION_SIZE + gx];
+    }
+
+    private byte[] generateRegion(int rx, int rz) {
         int wx = rx * REGION_SIZE;
         int wz = rz * REGION_SIZE;
         GpuComputeEngine engine = GpuAcceleratorMod.ensureEngine();
         if (engine != null) {
-            return engine.heightmap(REGION_SIZE, REGION_SIZE, scale, baseHeight, amplitude, seed, wx, wz);
+            return engine.density3d(REGION_SIZE, REGION_SIZE, H_SAMPLES, scale, baseHeight, amplitude, CAVE_SCALE, CAVE_AMP, seed, wx, wz, MIN_Y, SEA_LEVEL);
         }
-        return CpuNoise.heightmap(REGION_SIZE, REGION_SIZE, scale, baseHeight, amplitude, seed, wx, wz);
+        return CpuNoise.density3d(REGION_SIZE, REGION_SIZE, H_SAMPLES, scale, baseHeight, amplitude, CAVE_SCALE, CAVE_AMP, seed, wx, wz, MIN_Y, SEA_LEVEL);
     }
 
-    private BlockState blockFor(int y, int surface) {
-        if (y <= MIN_Y) return Blocks.BEDROCK.defaultBlockState();
-        if (y < surface - SURFACE_DEPTH) return Blocks.STONE.defaultBlockState();
-        if (y < surface) return Blocks.DIRT.defaultBlockState();
-        if (y == surface) return surface < SEA_LEVEL ? Blocks.SAND.defaultBlockState() : Blocks.GRASS_BLOCK.defaultBlockState();
-        if (y <= SEA_LEVEL) return Blocks.WATER.defaultBlockState();
+    private BlockState blockFor(int y, int surface, byte d) {
+        if (d == B_BEDROCK || y <= MIN_Y) return Blocks.BEDROCK.defaultBlockState();
+        if (d == B_STONE) {
+            if (y == surface) return surface < SEA_LEVEL ? Blocks.SAND.defaultBlockState() : Blocks.GRASS_BLOCK.defaultBlockState();
+            if (y >= surface - SURFACE_DEPTH) return Blocks.DIRT.defaultBlockState();
+            return Blocks.STONE.defaultBlockState();
+        }
+        if (d == B_WATER) return Blocks.WATER.defaultBlockState();
         return Blocks.AIR.defaultBlockState();
     }
 
@@ -125,16 +134,25 @@ public final class GpuChunkGenerator extends ChunkGenerator {
         int startZ = pos.getMinBlockZ();
         int minY = chunk.getMinBuildHeight();
         int maxY = minY + chunk.getHeight();
+        byte[] region = regionAt(startX, startZ);
 
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(startX, minY, startZ);
         for (int x = 0; x < 16; x++) {
             int wx = startX + x;
             for (int z = 0; z < 16; z++) {
                 int wz = startZ + z;
-                int surface = (int) Math.floor(getHeightAt(wx, wz));
-                BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(wx, minY, wz);
+                int surface = MIN_Y - 1;
+                for (int y = maxY - 1; y >= minY; y--) {
+                    byte d = density(region, wx, wz, y);
+                    if (d == B_STONE || d == B_BEDROCK) {
+                        surface = y;
+                        break;
+                    }
+                }
                 for (int y = minY; y < maxY; y++) {
-                    cursor.setY(y);
-                    chunk.setBlockState(cursor, blockFor(y, surface), false);
+                    byte d = density(region, wx, wz, y);
+                    cursor.set(wx, y, wz);
+                    chunk.setBlockState(cursor, blockFor(y, surface, d), false);
                 }
             }
         }
@@ -143,17 +161,33 @@ public final class GpuChunkGenerator extends ChunkGenerator {
 
     @Override
     public int getBaseHeight(int x, int z, Heightmap.Types type, LevelHeightAccessor level, RandomState randomState) {
-        return (int) Math.floor(getHeightAt(x, z));
+        byte[] region = regionAt(x, z);
+        int minY = level.getMinBuildHeight();
+        int maxY = minY + level.getHeight();
+        for (int y = maxY - 1; y >= minY; y--) {
+            byte d = density(region, x, z, y);
+            if (d == B_STONE || d == B_BEDROCK) return y;
+        }
+        return minY;
     }
 
     @Override
     public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor level, RandomState randomState) {
+        byte[] region = regionAt(x, z);
         int minY = level.getMinBuildHeight();
         int height = level.getHeight();
-        int surface = (int) Math.floor(getHeightAt(x, z));
+        int surface = MIN_Y - 1;
+        for (int y = minY + height - 1; y >= minY; y--) {
+            byte d = density(region, x, z, y);
+            if (d == B_STONE || d == B_BEDROCK) {
+                surface = y;
+                break;
+            }
+        }
         BlockState[] column = new BlockState[height];
         for (int i = 0; i < height; i++) {
-            column[i] = blockFor(minY + i, surface);
+            int y = minY + i;
+            column[i] = blockFor(y, surface, density(region, x, z, y));
         }
         return new NoiseColumn(minY, column);
     }
@@ -176,7 +210,7 @@ public final class GpuChunkGenerator extends ChunkGenerator {
     @Override
     public void applyCarvers(WorldGenRegion region, long seed, RandomState randomState, BiomeManager biomeManager,
                              StructureManager structureManager, ChunkAccess chunk, GenerationStep.Carving step) {
-        // no caves in the GPU terrain (kept simple)
+        // caves are already carved by the 3D density field
     }
 
     @Override
@@ -186,11 +220,9 @@ public final class GpuChunkGenerator extends ChunkGenerator {
 
     @Override
     public void spawnOriginalMobs(WorldGenRegion region) {
-        // no mobs spawned during generation
     }
 
     @Override
     public void addDebugScreenInfo(List<String> info, RandomState randomState, BlockPos pos) {
-        // optional debug info omitted
     }
 }
