@@ -291,12 +291,12 @@ public final class GpuComputeEngine implements AutoCloseable {
         }
     }
 
-    /** Computes a flow field (per-cell direction toward a target) on the GPU via BFS flood-fill. */
-    public synchronized byte[] flowField(byte[] walkable, int n, int targetX, int targetZ) {
+    /** Computes a 3D flow field (per-voxel direction toward a target) on the GPU via BFS flood-fill. */
+    public synchronized byte[] flowField(byte[] walkable, int nx, int ny, int nz, int targetX, int targetY, int targetZ) {
         long start = System.nanoTime();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer err = stack.mallocInt(1);
-            int total = n * n;
+            int total = nx * ny * nz;
             ByteBuffer walk = MemoryUtil.memAlloc(total);
             walk.put(walkable).flip();
             ByteBuffer outHost = MemoryUtil.memAlloc(total);
@@ -309,29 +309,33 @@ public final class GpuComputeEngine implements AutoCloseable {
             check(err.get(0));
             try {
                 PointerBuffer gws1 = stack.mallocPointer(1).put(total).flip();
-                PointerBuffer gws2 = stack.mallocPointer(2).put(n).put(n).flip();
+                PointerBuffer gws3 = stack.mallocPointer(3).put(nx).put(nz).put(ny).flip();
 
                 check(clSetKernelArg1p(ffResetKernel, 0, distDev));
-                check(clSetKernelArg1i(ffResetKernel, 1, n));
+                check(clSetKernelArg1i(ffResetKernel, 1, total));
                 check(clEnqueueNDRangeKernel(queue, ffResetKernel, 1, null, gws1, null, null, null));
 
                 check(clSetKernelArg1p(ffTargetKernel, 0, distDev));
-                check(clSetKernelArg1i(ffTargetKernel, 1, targetZ * n + targetX));
+                check(clSetKernelArg1i(ffTargetKernel, 1, targetY * (nx * nz) + targetZ * nx + targetX));
                 check(clEnqueueNDRangeKernel(queue, ffTargetKernel, 1, null, gws1, null, null, null));
 
                 check(clSetKernelArg1p(ffFloodKernel, 0, distDev));
                 check(clSetKernelArg1p(ffFloodKernel, 1, walkDev));
-                check(clSetKernelArg1i(ffFloodKernel, 2, n));
-                int iterations = 2 * n + 4;
+                check(clSetKernelArg1i(ffFloodKernel, 2, nx));
+                check(clSetKernelArg1i(ffFloodKernel, 3, ny));
+                check(clSetKernelArg1i(ffFloodKernel, 4, nz));
+                int iterations = 2 * (nx + ny + nz) + 4;
                 for (int it = 0; it < iterations; it++) {
-                    check(clEnqueueNDRangeKernel(queue, ffFloodKernel, 2, null, gws2, null, null, null));
+                    check(clEnqueueNDRangeKernel(queue, ffFloodKernel, 3, null, gws3, null, null, null));
                 }
 
                 check(clSetKernelArg1p(ffFlowKernel, 0, distDev));
                 check(clSetKernelArg1p(ffFlowKernel, 1, walkDev));
                 check(clSetKernelArg1p(ffFlowKernel, 2, outDev));
-                check(clSetKernelArg1i(ffFlowKernel, 3, n));
-                check(clEnqueueNDRangeKernel(queue, ffFlowKernel, 2, null, gws2, null, null, null));
+                check(clSetKernelArg1i(ffFlowKernel, 3, nx));
+                check(clSetKernelArg1i(ffFlowKernel, 4, ny));
+                check(clSetKernelArg1i(ffFlowKernel, 5, nz));
+                check(clEnqueueNDRangeKernel(queue, ffFlowKernel, 3, null, gws3, null, null, null));
                 check(clFinish(queue));
 
                 check(clEnqueueReadBuffer(queue, outDev, true, 0, outHost, null, null));

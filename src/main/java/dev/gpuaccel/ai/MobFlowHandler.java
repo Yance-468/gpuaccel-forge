@@ -10,13 +10,17 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 /**
- * Makes hostile mobs follow a GPU-computed flow field toward the nearest player (horde behavior).
- * The flow field is recomputed every couple of seconds; mobs inside its region follow it.
+ * Hostile mobs follow a GPU-computed 3D flow field toward the nearest player. Each online
+ * player gets their own flow field, refreshed every couple of seconds.
  */
 @Mod.EventBusSubscriber(modid = GpuAcceleratorMod.MODID)
 public final class MobFlowHandler {
-    private static FlowField current;
+    private static final Map<UUID, FlowField> FIELDS = new HashMap<>();
     private static int refreshCounter;
 
     private MobFlowHandler() {}
@@ -29,34 +33,30 @@ public final class MobFlowHandler {
 
         if (++refreshCounter >= 40) {
             refreshCounter = 0;
-            current = computeForNearestPlayer(server);
+            refreshFields(server);
         }
-        FlowField field = current;
-        if (field == null) return;
+        if (FIELDS.isEmpty()) return;
 
         for (ServerLevel level : server.getAllLevels()) {
-            for (Monster mob : level.getEntitiesOfClass(Monster.class, field.regionAabb())) {
-                Vec3 dir = field.directionAt(mob.blockPosition());
-                if (dir != null && dir != Vec3.ZERO) {
+            for (FlowField field : FIELDS.values()) {
+                for (Monster mob : level.getEntitiesOfClass(Monster.class, field.regionAabb())) {
+                    Vec3 dir = field.directionAt(mob.blockPosition());
+                    if (dir == null || dir == Vec3.ZERO) continue;
                     double tx = mob.getX() + dir.x * FlowField.CELL_SIZE;
                     double tz = mob.getZ() + dir.z * FlowField.CELL_SIZE;
                     mob.getMoveControl().setWantedPosition(tx, mob.getY(), tz, 1.3);
+                    if (dir.y > 0) mob.setJumping(true);
                     mob.getNavigation().stop();
                 }
             }
         }
     }
 
-    private static FlowField computeForNearestPlayer(MinecraftServer server) {
-        ServerPlayer nearest = null;
-        double nearestDist = Double.MAX_VALUE;
+    private static void refreshFields(MinecraftServer server) {
+        FIELDS.clear();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            ServerLevel level = player.serverLevel();
-            if (level == null) continue;
-            // use the first player; simpler than finding the true nearest
-            if (nearest == null) nearest = player;
+            FlowField field = FlowField.compute(player.serverLevel(), player.blockPosition());
+            if (field != null) FIELDS.put(player.getUUID(), field);
         }
-        if (nearest == null) return null;
-        return FlowField.compute(nearest.serverLevel(), nearest.blockPosition());
     }
 }
