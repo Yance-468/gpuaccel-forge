@@ -40,6 +40,8 @@ public final class GpuComputeEngine implements AutoCloseable {
     private final long ffTargetKernel;
     private final long boidsKernel;
     private final long separationKernel;
+    private final long explosionKernel;
+    private final long fluidKernel;
     private final GpuDeviceInfo deviceInfo;
     private final long maxMemoryBytes;
     private final int computeUnits;
@@ -49,7 +51,7 @@ public final class GpuComputeEngine implements AutoCloseable {
     private long lastHeightmapNanos;
     private final long startNanos;
 
-    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, long ffResetKernel, long ffFloodKernel, long ffFlowKernel, long ffTargetKernel, long boidsKernel, long separationKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
+    private GpuComputeEngine(long context, long queue, long device, long program, long heightmapKernel, long densityKernel, long ffResetKernel, long ffFloodKernel, long ffFlowKernel, long ffTargetKernel, long boidsKernel, long separationKernel, long explosionKernel, long fluidKernel, GpuDeviceInfo deviceInfo, long maxMemoryBytes, int computeUnits) {
         this.context = context;
         this.queue = queue;
         this.device = device;
@@ -62,6 +64,8 @@ public final class GpuComputeEngine implements AutoCloseable {
         this.ffTargetKernel = ffTargetKernel;
         this.boidsKernel = boidsKernel;
         this.separationKernel = separationKernel;
+        this.explosionKernel = explosionKernel;
+        this.fluidKernel = fluidKernel;
         this.deviceInfo = deviceInfo;
         this.maxMemoryBytes = maxMemoryBytes;
         this.computeUnits = computeUnits;
@@ -203,8 +207,12 @@ public final class GpuComputeEngine implements AutoCloseable {
                 check(err.get(0));
                 long separation = clCreateKernel(program, "separation", err);
                 check(err.get(0));
+                long explosion = clCreateKernel(program, "explosion", err);
+                check(err.get(0));
+                long fluid = clCreateKernel(program, "fluid", err);
+                check(err.get(0));
 
-                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, ffReset, ffFlood, ffFlow, ffTarget, boids, separation, info, maxMem, units);
+                return new GpuComputeEngine(context, queue, dev, program, kernel, densityKernel, ffReset, ffFlood, ffFlow, ffTarget, boids, separation, explosion, fluid, info, maxMem, units);
             }
         } catch (Throwable t) {
             // ensureOpenCl() already records a detailed reason; keep it if present.
@@ -447,6 +455,78 @@ public final class GpuComputeEngine implements AutoCloseable {
         }
     }
 
+    /** Computes a blast-damage field (2r+1 cube) around an explosion center. */
+    public synchronized float[] explosion(int r, float power) {
+        long start = System.nanoTime();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer err = stack.mallocInt(1);
+            int n = 2 * r + 1;
+            int total = n * n * n;
+            FloatBuffer outHost = MemoryUtil.memAllocFloat(total);
+            long outDev = clCreateBuffer(context, CL_MEM_WRITE_ONLY, (long) total * 4L, err);
+            check(err.get(0));
+            try {
+                check(clSetKernelArg1p(explosionKernel, 0, outDev));
+                check(clSetKernelArg1i(explosionKernel, 1, r));
+                check(clSetKernelArg1f(explosionKernel, 2, power));
+                PointerBuffer gws = stack.mallocPointer(3).put(n).put(n).put(n).flip();
+                check(clEnqueueNDRangeKernel(queue, explosionKernel, 3, null, gws, null, null, null));
+                check(clFinish(queue));
+                check(clEnqueueReadBuffer(queue, outDev, true, 0, outHost, null, null));
+                float[] result = new float[total];
+                outHost.get(result);
+                return result;
+            } finally {
+                clReleaseMemObject(outDev);
+                MemoryUtil.memFree(outHost);
+            }
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            heightmapCalls++;
+            totalNanos += elapsed;
+            lastHeightmapNanos = elapsed;
+        }
+    }
+
+    /** Runs one step of the 2D fluid spread automaton. */
+    public synchronized byte[] fluid(byte[] source, int w, int h) {
+        long start = System.nanoTime();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer err = stack.mallocInt(1);
+            int total = w * h;
+            ByteBuffer inHost = MemoryUtil.memAlloc(total);
+            inHost.put(source).flip();
+            ByteBuffer outHost = MemoryUtil.memAlloc(total);
+            long inDev = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, inHost, err);
+            check(err.get(0));
+            long outDev = clCreateBuffer(context, CL_MEM_WRITE_ONLY, total, err);
+            check(err.get(0));
+            try {
+                check(clSetKernelArg1p(fluidKernel, 0, inDev));
+                check(clSetKernelArg1p(fluidKernel, 1, outDev));
+                check(clSetKernelArg1i(fluidKernel, 2, w));
+                check(clSetKernelArg1i(fluidKernel, 3, h));
+                PointerBuffer gws = stack.mallocPointer(2).put(w).put(h).flip();
+                check(clEnqueueNDRangeKernel(queue, fluidKernel, 2, null, gws, null, null, null));
+                check(clFinish(queue));
+                check(clEnqueueReadBuffer(queue, outDev, true, 0, outHost, null, null));
+                byte[] result = new byte[total];
+                outHost.get(result);
+                return result;
+            } finally {
+                clReleaseMemObject(inDev);
+                clReleaseMemObject(outDev);
+                MemoryUtil.memFree(inHost);
+                MemoryUtil.memFree(outHost);
+            }
+        } finally {
+            long elapsed = System.nanoTime() - start;
+            heightmapCalls++;
+            totalNanos += elapsed;
+            lastHeightmapNanos = elapsed;
+        }
+    }
+
     @Override
     public void close() {
         clReleaseKernel(heightmapKernel);
@@ -457,6 +537,8 @@ public final class GpuComputeEngine implements AutoCloseable {
         clReleaseKernel(ffTargetKernel);
         clReleaseKernel(boidsKernel);
         clReleaseKernel(separationKernel);
+        clReleaseKernel(explosionKernel);
+        clReleaseKernel(fluidKernel);
         clReleaseProgram(program);
         clReleaseCommandQueue(queue);
         clReleaseContext(context);
