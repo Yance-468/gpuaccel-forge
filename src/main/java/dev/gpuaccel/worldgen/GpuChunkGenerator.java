@@ -105,6 +105,8 @@ public final class GpuChunkGenerator extends ChunkGenerator {
         int gx = Math.floorMod(wx, REGION_SIZE);
         int gz = Math.floorMod(wz, REGION_SIZE);
         int gy = (wy - MIN_Y) / Y_STEP;
+        if (gy < 0) gy = 0;
+        if (gy >= H_SAMPLES) gy = H_SAMPLES - 1;
         return region[gy * (REGION_SIZE * REGION_SIZE) + gz * REGION_SIZE + gx];
     }
 

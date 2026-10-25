@@ -29,7 +29,7 @@ public final class CpuNoise {
                                    int minY, int seaLevel) {
         byte[] out = new byte[w * d * hSamples];
         for (int gy = 0; gy < hSamples; gy++) {
-            int wy = minY + gy;
+            int wy = minY + gy * 4; // Y_STEP=4 sampling
             int yPlane = gy * (w * d);
             for (int gz = 0; gz < d; gz++) {
                 int wz = offsetZ + gz;

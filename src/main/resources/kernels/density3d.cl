@@ -57,7 +57,7 @@ __kernel void density(__global uchar* out, int width, int depth, int height,
     if (gx >= width || gz >= depth || gy >= height) return;
     int wx = offsetX + gx;
     int wz = offsetZ + gz;
-    int wy = minY + gy;
+    int wy = minY + gy * 4; // Y_STEP=4 sampling
 
     float terrain = base + amp * fbm3((float)wx * scale, (float)wy * scale, (float)wz * scale, seed) - (float)wy;
     float cave = fbm3((float)wx * caveScale, (float)wy * caveScale, (float)wz * caveScale, seed + 7919u);
