@@ -1,4 +1,4 @@
-﻿# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
+# GPU Accelerator（我的世界 Java 1.20.1 Forge 模组）
 
 让 **GPU 参与服务器加速运算** 的 Forge 服务端模组。它通过 OpenCL（LWJGL 绑定）把
 两类最并行、最耗计算的工作——**地形生成** 与 **生物寻路**——卸载到显卡上执行，
@@ -93,6 +93,13 @@ Minecraft 服务端很多计算是**天然并行**的：地形密度场的每个
 
 适合 GPU 的任务要满足「大量独立小计算、数据传输开销小于计算开销」。高度图/噪声/矩阵/流体扩散/
 N 体物理/流场寻路都是最佳候选；强顺序依赖的 tick 逻辑不适合直接搬上 GPU。
+
+## 第三方库许可
+
+本模组打包/依赖了以下第三方库：
+
+- **LWJGL 3.3.1**（BSD-3-Clause）：见 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
+- **SpongePowered Mixin 0.8.5**（MIT）：见 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
 
 ## 许可
 
